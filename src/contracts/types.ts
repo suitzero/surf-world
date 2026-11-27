@@ -75,6 +75,8 @@ export interface OceanField {
   breaking: Uint8Array;
   /** Whitewater amount 0..1 (persists and drifts shoreward). */
   foam: Float32Array;
+  /** Rideable wave-face strength 0..1: the steep unbroken slope just offshore of the break line. */
+  face: Float32Array;
 }
 
 export const SurferState = {
@@ -153,4 +155,12 @@ export interface WorldState {
   surferPeakDist: Float32Array;
   /** Count of wipeouts caused by dropping in on a surfer with priority. */
   surferDropins: Uint16Array;
+  /** Count of in-ride knockouts suffered: a wave owner closed in from behind and wiped this drop-in rider out. */
+  surferKnockouts: Uint16Array;
+  /** world.time of the last in-ride knockout suffered (-Infinity if never). */
+  surferKnockTime: Float32Array;
+  /** Surfer score at the moment the current ride started (baseline for knockout score zeroing). */
+  surferRideScoreStart: Float32Array;
+  /** Seconds spent tailgating a wave owner within the knock gap (self-wipeout timer). */
+  surferBlockedTime: Float32Array;
 }

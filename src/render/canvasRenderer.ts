@@ -12,8 +12,8 @@ import { ParticleKind, ParticleSystem } from './particles.ts';
 
 /**
  * Top-down Canvas renderer (S04). The ocean is painted into a grid-sized
- * ImageData (one pixel per cell) and blitted scaled with smoothing off for
- * a retro look; surfers are drawn as vector shapes on top.
+ * ImageData (one pixel per cell) and blitted scaled with bilinear smoothing;
+ * surfers are drawn as vector shapes on top.
  * Depth colormap: deep blue -> blue -> turquoise -> shallow -> sand.
  * Crests are lightened by surface elevation; breaking cells and foam are
  * blended toward white.
@@ -74,6 +74,7 @@ export class SurfRenderer {
   private readonly wakeAcc = new Float32Array(9);
   private readonly sprayAcc = new Float32Array(9);
   private readonly streakAcc = new Float32Array(9);
+  private readonly knockSeen = new Float32Array(9);
   private streakSide = 1;
 
   constructor(
@@ -155,6 +156,22 @@ export class SurfRenderer {
           g += 22;
           b += 22;
         }
+        // Wave face: the steep unbroken slope catches the light. Blend
+        // toward a bright glassy teal, stronger toward the lip (crest);
+        // the trough just behind the face sits in shadow.
+        const faceAmt = o.face[i];
+        if (faceAmt > 0.02) {
+          const sheen = faceAmt * (0.5 + 0.3 * Math.max(0, o.cosPhase[i]));
+          r += (150 - r) * sheen;
+          g += (242 - g) * sheen;
+          b += (216 - b) * sheen;
+        }
+        if (o.cosPhase[i] < -0.55) {
+          const dk = (-o.cosPhase[i] - 0.55) * 30;
+          r -= dk;
+          g -= dk;
+          b -= dk * 0.6;
+        }
         const foamAmt = o.breaking[i] === 1 ? 1 : o.foam[i] * 0.85;
         if (foamAmt > 0.01) {
           r += (255 - r) * foamAmt;
@@ -187,7 +204,9 @@ export class SurfRenderer {
       this.camera.cy = WORLD_H_M / 2;
     }
     const rect = viewRect(this.camera, aspect);
-    this.ctx.imageSmoothingEnabled = false;
+    // Bilinear interpolation between cell colors: the field is continuous,
+    // and flat per-cell blocks read as rendering errors (squares) on zoom.
+    this.ctx.imageSmoothingEnabled = true;
     this.ctx.drawImage(
       this.offscreen,
       rect.x / CELL_M,
@@ -237,6 +256,19 @@ export class SurfRenderer {
           const sx = x + -hy * side * 1.1;
           const sy = y + hx * side * 1.1;
           this.particles.emitStreak(sx, sy, vx, vy);
+        }
+      }
+    }
+    // Knockout splash: when a rider gets knocked out by the wave owner,
+    // burst spray at their position once per knockout event.
+    for (let i = 0; i < world.numSurfers; i++) {
+      const kc = world.surferKnockouts[i];
+      if (kc > this.knockSeen[i]) {
+        this.knockSeen[i] = kc;
+        const hx = Math.cos(world.surferHeading[i]);
+        const hy = Math.sin(world.surferHeading[i]);
+        for (let n = 0; n < 12; n++) {
+          this.particles.emitSpray(world.surferX[i], world.surferY[i], hx, hy, 5);
         }
       }
     }
@@ -302,6 +334,17 @@ export class SurfRenderer {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(heading);
+    // Knocked-out riders pop up off the board briefly.
+    if (
+      state === SurferState.WIPEOUT &&
+      world.surferKnockTime[i] > -Infinity &&
+      world.time - world.surferKnockTime[i] < 0.7
+    ) {
+      const p = (world.time - world.surferKnockTime[i]) / 0.7;
+      const pop = Math.sin(p * Math.PI);
+      ctx.translate(0, -pop * 9 * k);
+      ctx.rotate(pop * 0.7);
+    }
     // Board: elongated ellipse pointing along heading.
     ctx.fillStyle = state === SurferState.WIPEOUT ? '#9aa5b1' : boardColor;
     ctx.beginPath();

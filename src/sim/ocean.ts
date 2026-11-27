@@ -10,6 +10,15 @@ export const REF_DEPTH_M = 12;
 
 const INF = 1e9;
 
+function clamp01(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+/** Linear ramp: 0 at lo, 1 at hi. */
+function ramp(lo: number, hi: number, v: number): number {
+  return clamp01((v - lo) / (hi - lo));
+}
+
 /** Shallow-water wave speed c = sqrt(g * depth). Dry cells get ~0. */
 export function waveSpeed(depthM: number): number {
   return Math.sqrt(GRAVITY * Math.max(depthM, 0.02));
@@ -155,6 +164,7 @@ export function buildOcean(bathy: Bathymetry, swell: SwellParams, tideM: number)
     ratio: new Float32Array(n),
     breaking: new Uint8Array(n),
     foam: new Float32Array(n),
+    face: new Float32Array(n),
   };
 }
 
@@ -173,7 +183,7 @@ export function updateOcean(field: OceanField, swell: SwellParams, time: number,
   // of an already-supercritical upwave neighbour are whitewater, not a face.
   const backX = Math.round(Math.sin(theta) * 3);
   const backY = Math.round(Math.cos(theta) * 3);
-  const { tau, groupTau, amp, depthEff, cosPhase, ratio, breaking, foam } = field;
+  const { tau, groupTau, amp, depthEff, cosPhase, ratio, breaking, foam, face } = field;
   // Foam lives ~5 s and is advected shoreward at bore speed; sample the
   // previous step's field so whitewater forms travelling bands that wash
   // in and fade, instead of saturating the whole inside section.
@@ -221,6 +231,34 @@ export function updateOcean(field: OceanField, swell: SwellParams, time: number,
       }
       if (isBreaking) f = 1;
       foam[i] = f > 1 ? 1 : f;
+    }
+  }
+
+  // Wave face: the steep, rideable, still-unbroken slope just offshore of
+  // the break line. Strength peaks where the breaking ratio sits in the
+  // sub-breaking band rising toward the crest, weighted by how fast the
+  // ratio grows toward shore (shoaling steepening) and suppressed where
+  // whitewater has already taken over. Computed in a second pass so the
+  // shoreward ratio gradient reads this step's completed ratio field.
+  const fwdX = Math.round(Math.sin(theta) * 3);
+  const fwdY = Math.round(Math.cos(theta) * 3);
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    for (let x = 0; x < w; x++) {
+      const i = row + x;
+      if (depthEff[i] <= 0.25 || amp[i] <= 0) {
+        face[i] = 0;
+        continue;
+      }
+      const r = ratio[i];
+      const band = Math.min(ramp(0.42, 0.56, r), clamp01((BREAKING_RATIO + 0.12 - r) / 0.12));
+      const phaseW = ramp(-0.15, 0.6, cosPhase[i]);
+      const jx = x + fwdX < 0 ? 0 : x + fwdX >= w ? w - 1 : x + fwdX;
+      const jy = y + fwdY < 0 ? 0 : y + fwdY >= h ? h - 1 : y + fwdY;
+      const grad = ratio[jy * w + jx] - r;
+      const gradW = clamp01(0.45 + grad * 2.0);
+      const foamW = 1 - ramp(0.25, 0.7, foam[i]);
+      face[i] = band * phaseW * gradW * foamW;
     }
   }
 }

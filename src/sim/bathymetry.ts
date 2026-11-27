@@ -93,10 +93,20 @@ function genPoint(rng: SeededRng, w: number, h: number, out: Float32Array): void
       // so the shallow reef tongue reaches out and waves peel away from it.
       const hx = smoothstep(0.42, 0.95, x / w);
       let d = beachProfile(clamp(t + hx * 0.26, 0, 1));
-      // Reef flat on the point itself.
-      if (hx > 0.45 && t > 0.2 && t < 0.85) {
-        const flat = 3.4 - (hx - 0.45) * 1.6 + noise(x, y) * 0.3;
-        d = Math.min(d, flat);
+      // Reef flat on the point itself, feathered on every edge so depth
+      // contours curve instead of forming a rectangle: the weight fades in
+      // with hx and fades out at both t edges. The flat shallows toward the
+      // point tip (+hx) and toward shore (+t) and is deeper at its offshore
+      // edge, so the breaking ratio crosses its threshold along a smooth
+      // gradient instead of only at noise bumps.
+      const flatW =
+        smoothstep(0.48, 0.66, hx) *
+        smoothstep(0.14, 0.3, t) *
+        (1 - smoothstep(0.72, 0.88, t));
+      if (flatW > 0) {
+        const flat = 4.1 - (hx - 0.45) * 1.7 - (t - 0.2) * 1.1 + noise(x, y) * 0.18;
+        const target = Math.min(d, flat);
+        d = d + (target - d) * flatW;
       }
       out[y * w + x] = d + noise(x, y) * 0.15;
     }
@@ -112,22 +122,21 @@ function genReef(rng: SeededRng, w: number, h: number, out: Float32Array): void 
       const x01 = x / w;
       // Reef edge runs diagonally: further offshore on the west, closer east.
       const edgeT = 0.4 - 0.12 * x01 + noise(x, y) * 0.008;
-      let d: number;
-      if (t < edgeT) {
-        // Offshore slope down to the edge.
-        const s = t / edgeT;
-        d = 13 - 9.5 * s;
-      } else if (t > 0.94) {
-        d = -1.2; // dry sand strip
-      } else {
-        // Shallow reef platform with coral-head bumps.
-        d = 2.9 + noise(x, y) * 0.45 + heads(x, y) * 0.35;
-      }
-      // Deep channel cutting diagonally across the platform.
+      // Smooth transition band across the edge (was a hard if/else step):
+      // the offshore slope blends into the shallow platform over +/-0.035 of t.
+      const edgeBlend = smoothstep(edgeT - 0.035, edgeT + 0.035, t);
+      const offSlope = 13 - 9.5 * clamp(t / Math.max(edgeT, 0.05), 0, 1);
+      // Shallow reef platform with coral-head bumps.
+      const platform = 2.9 + noise(x, y) * 0.45 + heads(x, y) * 0.35;
+      let d = offSlope * (1 - edgeBlend) + platform * edgeBlend;
+      // Dry sand strip at the shore, feathered in.
+      const dry = smoothstep(0.925, 0.965, t);
+      d = d * (1 - dry) + -1.2 * dry;
+      // Deep channel cutting diagonally across the platform (platform only).
       const chanCenter = 0.22 + 0.3 * t;
       const chanDist = Math.abs(x01 - chanCenter);
       const chan = Math.exp(-Math.pow(chanDist / 0.045, 2));
-      if (t >= edgeT) d += 7.5 * chan;
+      d += 7.5 * chan * edgeBlend * (1 - dry);
       out[y * w + x] = d;
     }
   }
