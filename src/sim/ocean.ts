@@ -126,7 +126,7 @@ export function buildOcean(bathy: Bathymetry, swell: SwellParams, tideM: number)
  * and foam. Waves arrive in sets: amplitude is modulated by a slow envelope
  * travelling with the wave (function of t - tau), group period = 7 * T.
  */
-export function updateOcean(field: OceanField, swell: SwellParams, time: number, w: number, h: number): void {
+export function updateOcean(field: OceanField, swell: SwellParams, time: number, w: number, h: number, dt: number): void {
   const omega = (2 * Math.PI) / swell.periodS;
   const groupT = 7 * swell.periodS;
   const groupOmega = (2 * Math.PI) / groupT;
@@ -137,7 +137,11 @@ export function updateOcean(field: OceanField, swell: SwellParams, time: number,
   const backX = Math.round(Math.sin(theta) * 3);
   const backY = Math.round(Math.cos(theta) * 3);
   const { tau, amp, depthEff, cosPhase, ratio, breaking, foam } = field;
-  const foamDecay = 0.996;
+  // Foam lives ~5 s and is advected shoreward at bore speed; sample the
+  // previous step's field so whitewater forms travelling bands that wash
+  // in and fade, instead of saturating the whole inside section.
+  const foamPrev = foam.slice();
+  const foamDecay = Math.exp(-dt / 5);
   for (let y = 0; y < h; y++) {
     const row = y * w;
     for (let x = 0; x < w; x++) {
@@ -163,13 +167,21 @@ export function updateOcean(field: OceanField, swell: SwellParams, time: number,
       const isBreaking =
         cp > 0.45 && r >= BREAKING_RATIO && upRatio < BREAKING_RATIO * 1.03 && d >= 0.7 ? 1 : 0;
       breaking[i] = isBreaking;
-      // Foam: fresh at breaking cells, drifts shoreward (+y), decays slowly.
-      let f = foam[i] * foamDecay;
-      if (isBreaking) f = 1;
-      if (y >= 2) {
-        const up = foam[i - 2 * w] * 0.93;
-        if (up > f) f = up;
+      // Foam: fresh at breaking cells, then advected shoreward at bore
+      // speed (~0.6 * local wave speed, clamped) with decay.
+      let f = foamPrev[i] * foamDecay;
+      const bore = Math.min(Math.max(field.speed[i] * 0.6, 1), 4.5);
+      const driftCells = (bore * dt) / CELL_M;
+      const srcY = y - driftCells;
+      if (srcY >= 0) {
+        const y0 = Math.floor(srcY);
+        const frac = srcY - y0;
+        const a = foamPrev[y0 * w + x];
+        const b = y0 + 1 < h ? foamPrev[(y0 + 1) * w + x] : a;
+        const adv = (a + (b - a) * frac) * 0.995;
+        if (adv > f) f = adv;
       }
+      if (isBreaking) f = 1;
       foam[i] = f > 1 ? 1 : f;
     }
   }

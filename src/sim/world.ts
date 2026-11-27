@@ -168,7 +168,7 @@ export function stepWorld(world: WorldState, inputs: readonly SurferInput[]): vo
   const dt = world.config.dt;
   world.time += dt;
   world.stepCount++;
-  updateOcean(world.ocean, world.swell, world.time, world.config.gridW, world.config.gridH);
+  updateOcean(world.ocean, world.swell, world.time, world.config.gridW, world.config.gridH, world.config.dt);
   for (let i = 0; i < world.numSurfers; i++) {
     stepSurfer(world, i, inputs[i] ?? { moveX: 0, moveY: 0, takeoff: false }, dt);
   }
