@@ -14,8 +14,8 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" type="image/svg+xml" href="./icon.svg" />
     <title>AI Surf World</title>
-    <script type="module" crossorigin src="./assets/index-Dv1HXvAe.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-BTQBacLr.css">
+    <script type="module" crossorigin src="./assets/index-BegZV6rS.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CcisFiTk.css">
   </head>
   <body>
     <div id="app">
@@ -96,6 +96,53 @@
         <div class="control-group">
           <button id="btn-sound" type="button">🔊 SOUND: ON</button>
         </div>
+      </section>
+
+      <section class="lab" aria-label="Ocean Lab">
+        <h2 class="lab-title">🔬 OCEAN LAB — one ocean, three ways to compute it</h2>
+        <p class="lab-sub">Same bathymetry and swell as the game above (change them up there — the Lab follows). <strong>Physics</strong> is the fast approximation the game plays on. <strong>Accurate</strong> is the wave-equation teacher, live. <strong>Hybrid</strong> starts from the fast field and lets the teacher correct it tile by tile under a compute budget.</p>
+        <div class="lab-modes" role="group" aria-label="Ocean Lab mode">
+          <button type="button" class="lab-mode-btn active" data-mode="physics">PHYSICS (EIKONAL)</button>
+          <button type="button" class="lab-mode-btn" data-mode="accurate">ACCURATE (TEACHER)</button>
+          <button type="button" class="lab-mode-btn" data-mode="hybrid">HYBRID</button>
+        </div>
+        <div class="canvas-stage">
+          <canvas id="lab-canvas" width="768" height="576" aria-label="Ocean Lab field visualization"></canvas>
+        </div>
+        <p id="lab-blurb" class="lab-blurb"></p>
+        <section class="hud-bar lab-hud" aria-label="Ocean Lab readouts">
+          <div class="hud-item"><span class="hud-label">STATE</span><span id="lab-state" class="hud-value lab-state">–</span></div>
+          <div class="hud-item"><span class="hud-label">COVERAGE</span><span id="lab-coverage" class="hud-value">–</span></div>
+          <div class="hud-item"><span class="hud-label">CORRECTIONS</span><span id="lab-applied" class="hud-value">–</span></div>
+          <div class="hud-item"><span class="hud-label">DROPPED STALE</span><span id="lab-dropped" class="hud-value">–</span></div>
+          <div class="hud-item"><span class="hud-label">LAB FRAME</span><span id="lab-frame" class="hud-value lab-frame">–</span></div>
+        </section>
+        <section class="controls lab-controls" aria-label="Ocean Lab controls">
+          <div class="control-group">
+            <label for="lab-budget">Correction budget <strong id="lab-budget-val">5.0 ms/s</strong></label>
+            <input id="lab-budget" type="range" min="-1" max="1" step="0.01" value="0.699" />
+          </div>
+          <div class="control-group">
+            <button id="lab-source" type="button">TEACHER: WORKER</button>
+          </div>
+          <div class="control-group">
+            <button id="lab-perturb" type="button">⚡ SIMULATE MID-CORRECTION CHANGE</button>
+          </div>
+        </section>
+        <p class="hint">Hybrid mode: drag the budget down and corrections crawl; drag it up and tiles flip to teacher values (pink). The perturb button bumps tile versions mid-correction — watch DROPPED STALE climb: a correction computed against an older world is dropped, never applied.</p>
+      </section>
+      <section class="measured" aria-label="Measured results">
+        <h2 class="lab-title">📏 Measured results — including the failures</h2>
+        <ul class="measured-list">
+          <li><strong>Teacher wave speed:</strong> 12.70 m/s measured vs 12.53 m/s theory (+1.4%) on a flat 16 m tank.</li>
+          <li><strong>Teacher reflection:</strong> boundary reflection coefficient R = 0.237, above the 0.20 target — <em>missed</em>. Two sponge fixes were reverted because they broke reef stability.</li>
+          <li><strong>Neural one-step prediction:</strong> the U-Net beat persistence by 13.9% on conditions it trained on (MSE 0.0289 vs 0.0336 m²) — but was 8.4% <em>worse</em> than persistence on swell it had never seen (0.0374 vs 0.0345 m²). One-step generalization failed. (Its 4 s rollout still beat persistence by 75%.)</li>
+          <li><strong>Anytime curve (128×96):</strong> the teacher wins at every measured budget. The U-Net costs ~2.9× more per simulated second than the teacher at this scale — there is no budget here where the neural model pays off.</li>
+          <li><strong>Surfer AI:</strong> the forecast agent tied the rule agent (642 vs 646 catches); the multi-step planner lost (615 vs 646) and its search-budget curve never rose. Prediction did not raise catch rates with the current forecast field. The planner was safer: 20% fewer wipeouts, zero drop-ins.</li>
+          <li><strong>Hybrid corrections:</strong> the corrected breaking-onset line matches the teacher's own labels at a median of 0 cells (fast path alone: 1–3 cells off). Stale corrections are dropped by the state-version rule — demonstrated and counted, never applied.</li>
+          <li><strong>Partitioned solver:</strong> bit-exact against the monolithic run at 2 and 4 partitions; halo exchange cost 2.7% at 4 partitions. Distribution has no benefit at game scale on one machine.</li>
+        </ul>
+        <p class="hint">Every number above comes from this project's own measurement runs (project notes S07–S17). Failures are listed on purpose — that is the point of measuring.</p>
       </section>
 
       <p class="hint">
