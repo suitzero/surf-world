@@ -73,6 +73,7 @@ const hudFps = getEl<HTMLElement>('hud-fps');
 const hudSimMs = getEl<HTMLElement>('hud-simms');
 const seedLabel = getEl<HTMLElement>('seed-label');
 const btnCamera = getEl<HTMLButtonElement>('btn-camera');
+const rideBanner = getEl<HTMLElement>('ride-banner');
 
 function setStatus(msg: string): void {
   statusMsg.textContent = msg;
@@ -220,6 +221,55 @@ let fpsFrames = 0;
 let fpsTime = 0;
 let simMsAvg = 0;
 let lastPlayerState: SurferState = SurferState.PADDLE;
+let bannerWorld: WorldState | null = null;
+let bannerPrevState: SurferState = SurferState.PADDLE;
+let rideScoreStart = 0;
+let bannerFlashUntil = 0;
+let bannerFlashText = '';
+let bannerFlashClass = '';
+
+function updateRideBanner(): void {
+  if (world !== bannerWorld) {
+    bannerWorld = world;
+    bannerPrevState = world.surferState[0] as SurferState;
+    bannerFlashUntil = 0;
+    rideBanner.hidden = true;
+    return;
+  }
+  const state = world.surferState[0] as SurferState;
+  if (state === SurferState.RIDE && bannerPrevState !== SurferState.RIDE) {
+    rideScoreStart = world.surferScore[0];
+  }
+  if (
+    bannerPrevState === SurferState.RIDE &&
+    state !== SurferState.RIDE &&
+    world.surferRideTime[0] > 0.05
+  ) {
+    const pts = Math.max(0, Math.round(world.surferScore[0] - rideScoreStart));
+    const t = world.surferRideTime[0].toFixed(1);
+    if (state === SurferState.WIPEOUT) {
+      bannerFlashText = `💥 Wipeout — ride ${t}s, ${pts} pts`;
+      bannerFlashClass = 'wipeout';
+    } else {
+      bannerFlashText = `✅ Ride complete — ${t}s, ${pts} pts`;
+      bannerFlashClass = 'complete';
+    }
+    bannerFlashUntil = performance.now() + 2200;
+  }
+  bannerPrevState = state;
+  if (state === SurferState.RIDE) {
+    const pts = Math.max(0, Math.round(world.surferScore[0] - rideScoreStart));
+    rideBanner.textContent = `🏄 RIDE ${world.surferRideTime[0].toFixed(1)}s · ${pts} pts`;
+    rideBanner.className = 'ride-banner live';
+    rideBanner.hidden = false;
+  } else if (performance.now() < bannerFlashUntil) {
+    rideBanner.textContent = bannerFlashText;
+    rideBanner.className = `ride-banner ${bannerFlashClass}`;
+    rideBanner.hidden = false;
+  } else {
+    rideBanner.hidden = true;
+  }
+}
 
 function updateHud(): void {
   hudScore.textContent = String(Math.round(world.surferScore[0]));
@@ -260,6 +310,7 @@ function frame(now: number): void {
   }
   renderer?.render(world, elapsed);
   updateHud();
+  updateRideBanner();
   fpsFrames++;
   fpsTime += elapsed;
   if (fpsTime >= 0.5) {

@@ -8,6 +8,7 @@ import {
   worldToScreen,
 } from './camera.ts';
 import type { CameraMode, CameraState } from './camera.ts';
+import { ParticleKind, ParticleSystem } from './particles.ts';
 
 /**
  * Top-down Canvas renderer (S04). The ocean is painted into a grid-sized
@@ -69,6 +70,11 @@ export class SurfRenderer {
   private readonly image: ImageData;
   private readonly col: Rgb = { r: 0, g: 0, b: 0 };
   private readonly camera: CameraState;
+  private readonly particles = new ParticleSystem();
+  private readonly wakeAcc = new Float32Array(9);
+  private readonly sprayAcc = new Float32Array(9);
+  private readonly streakAcc = new Float32Array(9);
+  private streakSide = 1;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -92,6 +98,10 @@ export class SurfRenderer {
 
   get cameraMode(): CameraMode {
     return this.camera.mode;
+  }
+
+  get activeParticleCount(): number {
+    return this.particles.activeCount;
   }
 
   setCameraMode(mode: CameraMode): void {
@@ -190,10 +200,97 @@ export class SurfRenderer {
       ch
     );
     const k = WORLD_H_M / rect.h;
+    const pdt = Math.min(dtSeconds, 0.05);
+    for (let i = 0; i < world.numSurfers; i++) {
+      if (world.surferState[i] !== SurferState.RIDE) continue;
+      const vx = world.surferVX[i];
+      const vy = world.surferVY[i];
+      const speed = Math.hypot(vx, vy);
+      if (speed < 0.5) continue;
+      const heading = world.surferHeading[i];
+      const hx = Math.cos(heading);
+      const hy = Math.sin(heading);
+      const x = world.surferX[i];
+      const y = world.surferY[i];
+      const tx = x - hx * 2.3;
+      const ty = y - hy * 2.3;
+
+      this.wakeAcc[i] += (5 + speed * 5) * pdt;
+      while (this.wakeAcc[i] >= 1) {
+        this.wakeAcc[i] -= 1;
+        this.particles.emitWake(tx, ty, hx, hy, speed);
+      }
+
+      const sprayRate = speed > 3 ? (speed - 3) * 6 : 0;
+      this.sprayAcc[i] += sprayRate * pdt;
+      while (this.sprayAcc[i] >= 1) {
+        this.sprayAcc[i] -= 1;
+        this.particles.emitSpray(tx, ty, hx, hy, speed);
+      }
+
+      if (i === 0) {
+        const streakRate = speed > 4.2 ? (speed - 4.2) * 5 : 0;
+        this.streakAcc[i] += streakRate * pdt;
+        while (this.streakAcc[i] >= 1) {
+          this.streakAcc[i] -= 1;
+          const side = (this.streakSide = -this.streakSide);
+          const sx = x + -hy * side * 1.1;
+          const sy = y + hx * side * 1.1;
+          this.particles.emitStreak(sx, sy, vx, vy);
+        }
+      }
+    }
+    this.particles.update(pdt);
+
+    const pxPerM = ch / rect.h;
+    const p = this.particles;
+    this.ctx.save();
+    for (let i = 0; i < p.capacity; i++) {
+      const life = p.life[i];
+      if (life <= 0) continue;
+      const kind = p.kind[i];
+      if (kind !== ParticleKind.WAKE && kind !== ParticleKind.STREAK) continue;
+      const lifeFrac = life / p.maxLife[i];
+      const pos = worldToScreen(this.camera, cw, ch, p.x[i], p.y[i]);
+      if (kind === ParticleKind.WAKE) {
+        const radius = p.size[i] * (1.7 - lifeFrac * 1.0) * pxPerM;
+        this.ctx.fillStyle = `rgba(238, 250, 252, ${(0.40 * lifeFrac).toFixed(3)})`;
+        this.ctx.beginPath();
+        this.ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+        this.ctx.fill();
+      } else {
+        this.ctx.strokeStyle = `rgba(255, 255, 255, ${(0.32 * lifeFrac).toFixed(3)})`;
+        this.ctx.lineWidth = Math.max(1, 0.09 * pxPerM);
+        this.ctx.beginPath();
+        this.ctx.moveTo(pos.x, pos.y);
+        this.ctx.lineTo(
+          pos.x - p.vx[i] * pxPerM * 0.085,
+          pos.y - p.vy[i] * pxPerM * 0.085
+        );
+        this.ctx.stroke();
+      }
+    }
+    this.ctx.restore();
+
     for (let i = 0; i < world.numSurfers; i++) {
       const pos = worldToScreen(this.camera, cw, ch, world.surferX[i], world.surferY[i]);
       this.drawSurfer(world, i, pos.x, pos.y, k);
     }
+
+    this.ctx.save();
+    for (let i = 0; i < p.capacity; i++) {
+      const life = p.life[i];
+      if (life <= 0) continue;
+      if (p.kind[i] !== ParticleKind.SPRAY) continue;
+      const lifeFrac = life / p.maxLife[i];
+      const pos = worldToScreen(this.camera, cw, ch, p.x[i], p.y[i]);
+      const radius = Math.max(0.8, p.size[i] * pxPerM);
+      this.ctx.fillStyle = `rgba(255, 255, 255, ${(0.75 * lifeFrac).toFixed(3)})`;
+      this.ctx.beginPath();
+      this.ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+      this.ctx.fill();
+    }
+    this.ctx.restore();
   }
 
   private drawSurfer(world: WorldState, i: number, x: number, y: number, k: number): void {
