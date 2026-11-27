@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <meta name="theme-color" content="#072a40" />
+    <meta
+      name="description"
+      content="AI Surf World — top-down surfing simulation. Bathymetry-driven breaking waves, rule-based AI surfers, anytime ocean."
+    />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+    <title>AI Surf World</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <span class="brand">🌊 AI SURF WORLD</span>
+        <span id="status-msg" class="status-msg">Paddle out. WASD / arrows / drag.</span>
+      </header>
+
+      <section class="hud-bar" aria-label="Game HUD">
+        <div class="hud-item">
+          <span class="hud-label">SCORE</span>
+          <span id="hud-score" class="hud-value">0</span>
+        </div>
+        <div class="hud-item">
+          <span class="hud-label">WAVES</span>
+          <span id="hud-catches" class="hud-value">0</span>
+        </div>
+        <div class="hud-item">
+          <span class="hud-label">BEST RIDE</span>
+          <span id="hud-best" class="hud-value">0.0s</span>
+        </div>
+        <div class="hud-item hud-stamina-wrap">
+          <span class="hud-label">STAMINA</span>
+          <div class="stamina-meter"><div id="hud-stamina-fill" class="stamina-fill"></div></div>
+        </div>
+        <div class="hud-item">
+          <span class="hud-label">FPS</span>
+          <span id="hud-fps" class="hud-value">–</span>
+        </div>
+        <div class="hud-item">
+          <span class="hud-label">SIM MS</span>
+          <span id="hud-simms" class="hud-value">–</span>
+        </div>
+      </section>
+
+      <div class="canvas-stage">
+        <canvas id="surf-canvas" width="768" height="576" aria-label="Top-down surfing ocean"></canvas>
+      </div>
+
+      <section class="controls" aria-label="World controls">
+        <div class="control-group">
+          <label for="sel-bathy">Bathymetry</label>
+          <select id="sel-bathy">
+            <option value="sandbar" selected>Sandbar</option>
+            <option value="beach">Straight beach</option>
+            <option value="point">Point break</option>
+            <option value="reef">Reef</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label for="rng-height">Swell height <strong id="val-height">1.8 m</strong></label>
+          <input id="rng-height" type="range" min="0.5" max="3" step="0.1" value="1.8" />
+        </div>
+        <div class="control-group">
+          <label for="rng-period">Swell period <strong id="val-period">9 s</strong></label>
+          <input id="rng-period" type="range" min="5" max="14" step="0.5" value="9" />
+        </div>
+        <div class="control-group">
+          <label for="rng-direction">Swell direction <strong id="val-direction">8°</strong></label>
+          <input id="rng-direction" type="range" min="-35" max="35" step="1" value="8" />
+        </div>
+        <div class="control-group">
+          <label for="rng-tide">Tide <strong id="val-tide">0.0 m</strong></label>
+          <input id="rng-tide" type="range" min="-1" max="1.5" step="0.25" value="0" />
+        </div>
+        <div class="control-group">
+          <label for="rng-ai">AI surfers <strong id="val-ai">3</strong></label>
+          <input id="rng-ai" type="range" min="0" max="8" step="1" value="3" />
+        </div>
+        <div class="control-group">
+          <button id="btn-restart" type="button">↻ RESTART (NEW SEED)</button>
+          <span id="seed-label" class="seed-label">seed 7</span>
+        </div>
+      </section>
+
+      <p class="hint">
+        Paddle: WASD / arrow keys or touch-drag on the ocean. Paddle toward shore (↓ / S)
+        on a steep face — or press SPACE — to take off. Ride the peel, don't sit in the foam.
+      </p>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
