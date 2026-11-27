@@ -25,7 +25,7 @@ import { GRAVITY } from './ocean.ts';
  * - Ignores tide; uses bathy.depth directly.
  *
  * GRID & TIME-STEPPING SCHEME:
- * - Staggered Arakawa C-grid on width x height arrays (cell spacing CELL_M):
+ * - Staggered Arakawa C-grid on width x height arrays (cell spacing cellM (TeacherOptions, default CELL_M)):
  *   - eta[y*w + x] sits at cell centre ((x + 0.5)*cellM, (y + 0.5)*cellM).
  *   - u[y*w + x]   sits on the +x face between (x, y) and (x + 1, y) at
  *                  ((x + 1)*cellM, (y + 0.5)*cellM), with u = 0 on x = w - 1
@@ -71,6 +71,12 @@ export interface TeacherOptions {
   cflSafety?: number;
   /** Width in cells of the Rayleigh damping sponge on left/right/bottom edges (default 8). */
   spongeCells?: number;
+  /**
+   * Cell size in metres (default CELL_M = 4). Bathymetry width/height are taken
+   * from the Bathymetry object as before; this only overrides the physical cell
+   * size used for CFL, distances and sampling.
+   */
+  cellM?: number;
 }
 
 export interface TeacherSolver {
@@ -98,7 +104,7 @@ const RAMP_DURATION_S = 1.0;
 export function createTeacher(bathy: Bathymetry, opts: TeacherOptions = {}): TeacherSolver {
   const w = bathy.width;
   const h = bathy.height;
-  const cellM = CELL_M;
+  const cellM = opts.cellM ?? CELL_M;
   const n = w * h;
 
   const amplitudeM = opts.amplitudeM ?? 0.9;
