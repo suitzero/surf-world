@@ -20,6 +20,41 @@ import { normalizeSeed } from './prng.ts';
 
 export const DEFAULT_SWELL: SwellParams = { heightM: 1.8, periodS: 9, directionDeg: 8 };
 
+export const TUNING = {
+  /** Base paddling speed in m/s. */
+  paddleSpeed: 4.0,
+  /** Velocity blend rate toward target paddle velocity (1/s). */
+  paddleAccelRate: 8,
+  /** Stamina drained per second while actively paddling. */
+  staminaDrainPerSec: 7,
+  /** Stamina regenerated per second while resting/waiting. */
+  staminaRegenPerSec: 5,
+  /** Stamina level below which paddle speed is reduced. */
+  staminaLowThreshold: 15,
+  /** Paddle speed multiplier applied below staminaLowThreshold. */
+  staminaLowFactor: 0.5,
+  /** Minimum effective water depth (m) required for takeoff. */
+  takeoffMinDepth: 0.8,
+  /** Minimum wave height-to-depth ratio required for takeoff. */
+  takeoffRatioMin: 0.42,
+  /** Maximum wave height-to-depth ratio allowed for takeoff. */
+  takeoffRatioMax: 1.25,
+  /** Minimum cos(phase) (crest proximity) required for takeoff. */
+  takeoffCosPhaseMin: 0.0,
+  /** Maximum foam level allowed for takeoff. */
+  takeoffFoamMax: 0.85,
+  /** Foam threshold that counts as being caught inside. */
+  insideFoamThreshold: 0.8,
+  /** Seconds allowed in breaking/foamy water before forced wipeout. */
+  insideGraceTime: 1.0,
+  /** Duration of the takeoff pop-up state in seconds. */
+  takeoffTime: 0.35,
+  /** Duration of the wipeout state in seconds. */
+  wipeoutTime: 2.2,
+  /** Duration of the kickout state in seconds. */
+  kickoutTime: 0.5,
+} as const;
+
 export interface CreateWorldOptions {
   bathymetry?: BathymetryKind;
   swell?: SwellParams;
@@ -122,7 +157,13 @@ export function sampleOcean(world: WorldState, xM: number, yM: number): OceanSam
  */
 export function takeoffQuality(world: WorldState, xM: number, yM: number): boolean {
   const s = sampleOcean(world, xM, yM);
-  return s.depth >= 0.8 && s.ratio >= 0.5 && s.ratio <= 1.2 && s.cosPhase >= 0.05 && s.foam <= 0.8;
+  return (
+    s.depth >= TUNING.takeoffMinDepth &&
+    s.ratio >= TUNING.takeoffRatioMin &&
+    s.ratio <= TUNING.takeoffRatioMax &&
+    s.cosPhase >= TUNING.takeoffCosPhaseMin &&
+    s.foam <= TUNING.takeoffFoamMax
+  );
 }
 
 /**
@@ -158,11 +199,6 @@ function setState(world: WorldState, i: number, state: SurferState): void {
   world.surferStateTime[i] = 0;
 }
 
-const PADDLE_SPEED = 3.4; // m/s
-const TAKEOFF_TIME = 0.35;
-const WIPEOUT_TIME = 2.2;
-const KICKOUT_TIME = 0.5;
-
 /** Advance the whole world by one fixed step. inputs[0] is the player. */
 export function stepWorld(world: WorldState, inputs: readonly SurferInput[]): void {
   const dt = world.config.dt;
@@ -191,21 +227,21 @@ function stepSurfer(world: WorldState, i: number, input: SurferInput, dt: number
     case SurferState.RETURN: {
       const mag = Math.hypot(input.moveX, input.moveY);
       const moving = mag > 0.05;
-      const staminaFactor = stamina < 15 ? 0.5 : 1;
-      const tx = moving ? (input.moveX / Math.max(1, mag)) * PADDLE_SPEED * staminaFactor : 0;
-      const ty = moving ? (input.moveY / Math.max(1, mag)) * PADDLE_SPEED * staminaFactor : 0;
-      const blend = Math.min(1, 6 * dt);
+      const staminaFactor = stamina < TUNING.staminaLowThreshold ? TUNING.staminaLowFactor : 1;
+      const tx = moving ? (input.moveX / Math.max(1, mag)) * TUNING.paddleSpeed * staminaFactor : 0;
+      const ty = moving ? (input.moveY / Math.max(1, mag)) * TUNING.paddleSpeed * staminaFactor : 0;
+      const blend = Math.min(1, TUNING.paddleAccelRate * dt);
       vx += (tx - vx) * blend;
       vy += (ty - vy) * blend;
       if (moving) {
-        world.surferStamina[i] = Math.max(0, stamina - 7 * dt);
+        world.surferStamina[i] = Math.max(0, stamina - TUNING.staminaDrainPerSec * dt);
       } else {
-        world.surferStamina[i] = Math.min(100, stamina + 5 * dt);
+        world.surferStamina[i] = Math.min(100, stamina + TUNING.staminaRegenPerSec * dt);
       }
       // Caught inside: sitting in the break zone too long washes you out.
-      if (local.breaking || local.foam > 0.75) {
+      if (local.breaking || local.foam > TUNING.insideFoamThreshold) {
         world.surferInsideTime[i] += dt;
-        if (world.surferInsideTime[i] > 0.7) {
+        if (world.surferInsideTime[i] > TUNING.insideGraceTime) {
           world.surferWipeouts[i]++;
           world.surferStamina[i] = Math.max(0, world.surferStamina[i] - 12);
           setState(world, i, SurferState.WIPEOUT);
@@ -234,7 +270,7 @@ function stepSurfer(world: WorldState, i: number, input: SurferInput, dt: number
       // Short pop-up: drift shoreward with the face, then riding.
       vx *= 0.9;
       vy += (2.2 - vy) * Math.min(1, 8 * dt);
-      if (st >= TAKEOFF_TIME) {
+      if (st >= TUNING.takeoffTime) {
         const cx = Math.floor(x / CELL_M);
         const cy = Math.floor(y / CELL_M);
         const peel = peelSignAt(world.ocean, world.config.gridW, cx, cy);
@@ -283,14 +319,14 @@ function stepSurfer(world: WorldState, i: number, input: SurferInput, dt: number
       // Tumbled shoreward by the whitewater.
       vx *= 0.92;
       vy += (0.9 - vy) * Math.min(1, 3 * dt);
-      if (st >= WIPEOUT_TIME) setState(world, i, SurferState.RETURN);
+      if (st >= TUNING.wipeoutTime) setState(world, i, SurferState.RETURN);
       break;
     }
     case SurferState.KICKOUT: {
       // Over the back of the wave, then paddle back out.
       vx *= 0.9;
       vy += (-2.0 - vy) * Math.min(1, 6 * dt);
-      if (st >= KICKOUT_TIME) setState(world, i, SurferState.RETURN);
+      if (st >= TUNING.kickoutTime) setState(world, i, SurferState.RETURN);
       break;
     }
   }
