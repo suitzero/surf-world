@@ -1,4 +1,5 @@
 import './style.css';
+import { initAudio, isMuted, playSfx, setMuted, startBgm } from './audio/audioEngine.ts';
 import { SurferState, WORLD_H_M, WORLD_W_M } from './contracts/types.ts';
 import type { BathymetryKind, SurferInput, WorldState } from './contracts/types.ts';
 import { RuleAgent } from './policies/ruleAgent.ts';
@@ -73,6 +74,7 @@ const hudFps = getEl<HTMLElement>('hud-fps');
 const hudSimMs = getEl<HTMLElement>('hud-simms');
 const seedLabel = getEl<HTMLElement>('seed-label');
 const btnCamera = getEl<HTMLButtonElement>('btn-camera');
+const btnSound = getEl<HTMLButtonElement>('btn-sound');
 const rideBanner = getEl<HTMLElement>('ride-banner');
 
 function setStatus(msg: string): void {
@@ -93,13 +95,30 @@ function toggleCamera(): void {
   if (mode === 'follow') {
     renderer.snapToPlayer(world);
   }
+  playSfx('click');
 }
+
+function syncSoundButton(): void {
+  btnSound.textContent = isMuted() ? '🔇 SOUND: OFF' : '🔊 SOUND: ON';
+}
+
+const unlockAudio = (): void => {
+  initAudio();
+  startBgm();
+};
+window.addEventListener('pointerdown', unlockAudio, { once: true });
+window.addEventListener('keydown', unlockAudio, { once: true });
 
 buildWorld();
 renderer = new SurfRenderer(canvas, world.config.gridW, world.config.gridH, loadCameraMode());
 renderer.snapToPlayer(world);
 syncCameraButton();
 btnCamera.addEventListener('click', toggleCamera);
+syncSoundButton();
+btnSound.addEventListener('click', () => {
+  setMuted(!isMuted());
+  syncSoundButton();
+});
 
 // --- Player input: keyboard + pointer drag ---
 const heldKeys = new Set<string>();
@@ -210,6 +229,7 @@ bindSlider('rng-tide', 'val-tide', (v) => `${v.toFixed(2)} m`, (v) => (tide = v)
 bindSlider('rng-ai', 'val-ai', (v) => `${v.toFixed(0)}`, (v) => (aiCount = Math.round(v)));
 
 getEl<HTMLButtonElement>('btn-restart').addEventListener('click', () => {
+  playSfx('click');
   seed = (seed + 1) >>> 0;
   buildWorld();
 });
@@ -280,9 +300,18 @@ function updateHud(): void {
   hudStaminaFill.style.backgroundColor = stam > 30 ? 'var(--accent)' : 'var(--danger)';
   const state = world.surferState[0] as SurferState;
   if (state !== lastPlayerState) {
-    if (state === SurferState.RIDE) setStatus('🏄 Riding! Stay ahead of the foam.');
-    else if (state === SurferState.WIPEOUT) setStatus('💥 Wiped out! Paddling back out…');
-    else if (state === SurferState.TAKEOFF) setStatus('⚡ Takeoff!');
+    if (state === SurferState.RIDE) {
+      setStatus('🏄 Riding! Stay ahead of the foam.');
+      playSfx('ride');
+    } else if (state === SurferState.WIPEOUT) {
+      setStatus('💥 Wiped out! Paddling back out…');
+      playSfx('wipeout');
+    } else if (state === SurferState.TAKEOFF) {
+      setStatus('⚡ Takeoff!');
+      playSfx('takeoff');
+    } else if (state === SurferState.KICKOUT) {
+      playSfx('kickout');
+    }
     lastPlayerState = state;
   }
 }
@@ -297,6 +326,13 @@ function frame(now: number): void {
   while (accumulator >= dt && steps < 12) {
     const inputs: SurferInput[] = new Array(world.numSurfers);
     inputs[0] = playerInput();
+    const playerState = world.surferState[0] as SurferState;
+    if (
+      (inputs[0].moveX !== 0 || inputs[0].moveY !== 0) &&
+      (playerState === SurferState.PADDLE || playerState === SurferState.RETURN)
+    ) {
+      playSfx('paddle');
+    }
     for (let i = 1; i < world.numSurfers; i++) {
       inputs[i] = agents[i - 1].decide(world, i);
     }
