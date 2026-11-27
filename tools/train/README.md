@@ -1,0 +1,3 @@
+# surf-world U-Net Training Pipeline
+
+Run `.venv-train/bin/python tools/train/train.py [--epochs 12] [--data-dir data/full] [--out-dir tools/train/results]` from the repository root to train a compact CPU U-Net (`CompactUNet`) that predicts the next wave-elevation frame (`eta_{t+1}`) from `[eta_t, eta_{t-1}, depth]` on a deterministic 32-train / 12-val episode split of `data/full/` loaded via `tools/train/swe1.py`. Per-epoch metrics (`history.json`), normalization scales and final comparison against the persistence baseline (`summary.json`), and trained weights (`unet.pt`) are written to `tools/train/results/` (or `--out-dir`).

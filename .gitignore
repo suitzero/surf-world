@@ -1,3 +1,6 @@
 node_modules
 dist
 data/
+.venv-train/
+tools/train/__pycache__/
+tools/train/results/
