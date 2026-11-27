@@ -2,6 +2,7 @@ import './style.css';
 import { initAudio, isMuted, playSfx, setMuted, startBgm } from './audio/audioEngine.ts';
 import { SurferState, WORLD_H_M, WORLD_W_M } from './contracts/types.ts';
 import type { BathymetryKind, SurferInput, WorldState } from './contracts/types.ts';
+import { initOceanLab } from './lab/oceanLab.ts';
 import { RuleAgent } from './policies/ruleAgent.ts';
 import type { CameraMode } from './render/camera.ts';
 import { SurfRenderer } from './render/canvasRenderer.ts';
@@ -358,3 +359,10 @@ function frame(now: number): void {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+initOceanLab(() => ({
+  kind: bathyKind,
+  seed,
+  swell: { heightM: swellHeight, periodS: swellPeriod, directionDeg: swellDirection },
+  tideM: tide,
+}));
