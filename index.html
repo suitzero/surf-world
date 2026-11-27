@@ -14,8 +14,8 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" type="image/svg+xml" href="./icon.svg" />
     <title>AI Surf World</title>
-    <script type="module" crossorigin src="./assets/index-BXZcMd0g.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-CcisFiTk.css">
+    <script type="module" crossorigin src="./assets/index-CqwXkljB.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BxqMmnmI.css">
   </head>
   <body>
     <div id="app">
@@ -130,6 +130,51 @@
           </div>
         </section>
         <p class="hint">Hybrid mode: drag the budget down and corrections crawl; drag it up and tiles flip to teacher values (pink). The perturb button bumps tile versions mid-correction — watch DROPPED STALE climb: a correction computed against an older world is dropped, never applied.</p>
+      </section>
+      <section class="lab studio" aria-label="Terrain Studio">
+        <h2 class="lab-title">🧱 TERRAIN STUDIO — stack blocks, build your break</h2>
+        <p class="lab-sub">Every cell is a stack of blocks; one block is 0.5 m of seafloor. <strong>Raise</strong> the bottom to make shallows and bars, <strong>lower</strong> it for channels. Start from a generated preset, smooth the edges, then surf what you built.</p>
+        <div class="canvas-stage">
+          <canvas id="studio-canvas" width="768" height="576" aria-label="Bathymetry block editor"></canvas>
+        </div>
+        <p id="studio-readout" class="lab-blurb">Hover the map to inspect a cell.</p>
+        <section class="controls lab-controls" aria-label="Terrain Studio controls">
+          <div class="control-group">
+            <button id="studio-raise" type="button" class="lab-mode-btn active">⬆ RAISE</button>
+            <button id="studio-lower" type="button" class="lab-mode-btn">⬇ LOWER</button>
+          </div>
+          <div class="control-group">
+            <label>Brush</label>
+            <button id="studio-brush-1" type="button" class="lab-mode-btn active">1×1</button>
+            <button id="studio-brush-3" type="button" class="lab-mode-btn">3×3</button>
+            <button id="studio-brush-5" type="button" class="lab-mode-btn">5×5</button>
+          </div>
+          <div class="control-group">
+            <label for="studio-preset">Start from</label>
+            <select id="studio-preset">
+              <option value="sandbar" selected>Sandbar</option>
+              <option value="beach">Straight beach</option>
+              <option value="point">Point break</option>
+              <option value="reef">Reef</option>
+              <option value="flat">Flat beach profile</option>
+            </select>
+            <button id="studio-apply-preset" type="button" class="lab-mode-btn">LOAD PRESET</button>
+          </div>
+          <div class="control-group">
+            <button id="studio-smooth" type="button" class="lab-mode-btn">〜 SMOOTH</button>
+            <button id="studio-save" type="button" class="lab-mode-btn">💾 SAVE</button>
+            <button id="studio-load" type="button" class="lab-mode-btn">📂 LOAD</button>
+          </div>
+          <div class="control-group">
+            <button id="studio-export" type="button" class="lab-mode-btn">⬇ EXPORT</button>
+            <button id="studio-import-btn" type="button" class="lab-mode-btn">⬆ IMPORT</button>
+            <input id="studio-import" type="file" accept="application/json,.json" hidden />
+          </div>
+          <div class="control-group">
+            <button id="studio-surf" type="button" class="lab-mode-btn">▶ SURF THIS TERRAIN</button>
+          </div>
+        </section>
+        <p id="studio-status" class="hint"></p>
       </section>
       <section class="measured" aria-label="Measured results">
         <h2 class="lab-title">📏 Measured results — including the failures</h2>
