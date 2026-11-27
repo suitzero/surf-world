@@ -139,4 +139,18 @@ export interface WorldState {
   /** Ride direction captured at takeoff. */
   rideDirX: Float32Array;
   rideDirY: Float32Array;
+  /** world.time when the surfer last entered TAKEOFF (-Infinity if never). */
+  surferTakeoffTime: Float32Array;
+  /** Position at the moment the surfer last entered TAKEOFF (metres). */
+  surferTakeoffX: Float32Array;
+  surferTakeoffY: Float32Array;
+  /**
+   * Distance (m) to the nearest breaking cell, measured at the moment the
+   * surfer entered TAKEOFF. Priority is judged on takeoff-time distances:
+   * the breaking mask moves several metres within a second, so re-measuring
+   * at adjudication time would judge a different wave than the one taken.
+   */
+  surferPeakDist: Float32Array;
+  /** Count of wipeouts caused by dropping in on a surfer with priority. */
+  surferDropins: Uint16Array;
 }

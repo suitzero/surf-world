@@ -1,6 +1,6 @@
 import { CELL_M, NO_INPUT, SurferState } from '../contracts/types.ts';
 import type { SurferInput, WorldState } from '../contracts/types.ts';
-import { sampleOcean, takeoffQuality } from '../sim/world.ts';
+import { distanceToPeak, findPriorityConflict, sampleOcean, takeoffQuality } from '../sim/world.ts';
 
 /**
  * Rule-based surfer agent (S06). Reads ONLY the current observable ocean
@@ -31,6 +31,14 @@ export class RuleAgent {
     const x = world.surferX[i];
     const y = world.surferY[i];
     const dt = world.config.dt;
+
+    // Priority etiquette: yield the wave completely if taking off here would
+    // drop in on another surfer (note: paddling shoreward with moveY > 0.55
+    // also triggers takeoff, so returning NO_INPUT avoids any accidental drop-in).
+    const blocked =
+      takeoffQuality(world, x, y) &&
+      findPriorityConflict(world, i, x, y, world.time, true, distanceToPeak(world, x, y)) >= 0;
+    if (blocked) return NO_INPUT;
 
     this.retargetIn -= dt;
     if (this.retargetIn <= 0) {

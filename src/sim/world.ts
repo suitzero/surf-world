@@ -53,6 +53,14 @@ export const TUNING = {
   wipeoutTime: 2.2,
   /** Duration of the kickout state in seconds. */
   kickoutTime: 0.5,
+  /** Max seconds after the owner's takeoff that another takeoff counts as the same wave. */
+  priorityWindowSec: 1.5,
+  /** Max alongshore distance (m) from the owner's takeoff for same-wave grouping. */
+  priorityAlongshoreM: 25,
+  /** Max cross-shore distance (m) from the owner's takeoff for same-wave grouping. */
+  priorityCrossShoreM: 30,
+  /** Margin (m) closer to the breaking peak required for a later takeoff to override priority. */
+  priorityPeakMarginM: 2,
 } as const;
 
 export interface CreateWorldOptions {
@@ -104,6 +112,11 @@ export function createWorld(opts: CreateWorldOptions, seed: number): WorldState 
     surferInsideTime: new Float32Array(numSurfers),
     rideDirX: new Float32Array(numSurfers),
     rideDirY: new Float32Array(numSurfers),
+    surferTakeoffTime: new Float32Array(numSurfers).fill(-Infinity),
+    surferTakeoffX: new Float32Array(numSurfers),
+    surferTakeoffY: new Float32Array(numSurfers),
+    surferPeakDist: new Float32Array(numSurfers).fill(Infinity),
+    surferDropins: new Uint16Array(numSurfers),
   };
   // Spawn the lineup spread along the takeoff contour.
   for (let i = 0; i < numSurfers; i++) {
@@ -164,6 +177,74 @@ export function takeoffQuality(world: WorldState, xM: number, yM: number): boole
     s.cosPhase >= TUNING.takeoffCosPhaseMin &&
     s.foam <= TUNING.takeoffFoamMax
   );
+}
+
+/**
+ * Minimum Euclidean distance (m) from (x, y) to the center of any currently
+ * breaking cell (ocean.breaking === 1). Returns Infinity if no cell is breaking.
+ */
+export function distanceToPeak(world: WorldState, x: number, y: number): number {
+  const { gridW: w, gridH: h } = world.config;
+  const breaking = world.ocean.breaking;
+  let bestSq = Infinity;
+  for (let cy = 0; cy < h; cy++) {
+    const row = cy * w;
+    const dy = cy * CELL_M + CELL_M / 2 - y;
+    const dySq = dy * dy;
+    for (let cx = 0; cx < w; cx++) {
+      if (breaking[row + cx] !== 1) continue;
+      const dx = cx * CELL_M + CELL_M / 2 - x;
+      const dSq = dx * dx + dySq;
+      if (dSq < bestSq) bestSq = dSq;
+    }
+  }
+  return bestSq === Infinity ? Infinity : Math.sqrt(bestSq);
+}
+
+/**
+ * Check whether a takeoff by surfer `i` at `(x, y)` and time `t` drops in on
+ * another surfer who owns priority on the same wave.
+ *
+ * Right-of-way rule: the surfer closest to the breaking peak owns the wave.
+ * A later takeoff grouped onto the same wave (within priorityWindowSec,
+ * priorityAlongshoreM, and priorityCrossShoreM of claimant `j`'s takeoff) while
+ * `j` is still riding (or popping up when `includeTakeoff` is true) is a drop-in
+ * unless surfer `i` is clearly closer to the peak by more than priorityPeakMarginM.
+ *
+ * Peak distances are takeoff-time measurements on both sides: `myPeakDist`
+ * is surfer `i`'s distance to the peak at `i`'s takeoff moment (the caller
+ * passes surferPeakDist[i] when adjudicating a real takeoff, or a live
+ * distanceToPeak for a hypothetical one), and each claimant is compared by
+ * its recorded surferPeakDist. The breaking mask moves too fast to re-measure
+ * fairly at adjudication time.
+ *
+ * Returns the first qualifying claimant index `j` in increasing index order, or -1.
+ */
+export function findPriorityConflict(
+  world: WorldState,
+  i: number,
+  x: number,
+  y: number,
+  t: number,
+  includeTakeoff: boolean,
+  myPeakDist: number
+): number {
+  const t32 = Math.fround(t);
+  for (let j = 0; j < world.numSurfers; j++) {
+    if (j === i) continue;
+    const sj = world.surferState[j] as SurferState;
+    if (sj !== SurferState.RIDE && !(includeTakeoff && sj === SurferState.TAKEOFF)) {
+      continue;
+    }
+    const dt = t32 - world.surferTakeoffTime[j];
+    if (dt < 0 || dt > TUNING.priorityWindowSec) continue;
+    if (Math.abs(x - world.surferTakeoffX[j]) > TUNING.priorityAlongshoreM) continue;
+    if (Math.abs(y - world.surferTakeoffY[j]) > TUNING.priorityCrossShoreM) continue;
+    if (myPeakDist >= world.surferPeakDist[j] - TUNING.priorityPeakMarginM) {
+      return j;
+    }
+  }
+  return -1;
 }
 
 /**
@@ -253,6 +334,10 @@ function stepSurfer(world: WorldState, i: number, input: SurferInput, dt: number
       // Takeoff: explicit signal or paddling hard toward shore on a face.
       const wantsTakeoff = input.takeoff || input.moveY > 0.55;
       if (wantsTakeoff && takeoffQuality(world, x, y)) {
+        world.surferTakeoffTime[i] = world.time;
+        world.surferTakeoffX[i] = x;
+        world.surferTakeoffY[i] = y;
+        world.surferPeakDist[i] = distanceToPeak(world, x, y);
         setState(world, i, SurferState.TAKEOFF);
         break;
       }
@@ -271,6 +356,25 @@ function stepSurfer(world: WorldState, i: number, input: SurferInput, dt: number
       vx *= 0.9;
       vy += (2.2 - vy) * Math.min(1, 8 * dt);
       if (st >= TUNING.takeoffTime) {
+        // Adjudicate right-of-way before transitioning to RIDE: dropping in on
+        // a surfer who owns the wave wipes out immediately with no catch/score.
+        if (
+          findPriorityConflict(
+            world,
+            i,
+            world.surferTakeoffX[i],
+            world.surferTakeoffY[i],
+            world.surferTakeoffTime[i],
+            false,
+            world.surferPeakDist[i]
+          ) >= 0
+        ) {
+          world.surferDropins[i]++;
+          world.surferWipeouts[i]++;
+          world.surferStamina[i] = Math.max(0, world.surferStamina[i] - 12);
+          setState(world, i, SurferState.WIPEOUT);
+          break;
+        }
         const cx = Math.floor(x / CELL_M);
         const cy = Math.floor(y / CELL_M);
         const peel = peelSignAt(world.ocean, world.config.gridW, cx, cy);
