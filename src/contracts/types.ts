@@ -53,12 +53,14 @@ export interface Bathymetry {
 }
 
 /**
- * Ocean field. Static-per-config arrays (tau/speed/amp/depthEff) are rebuilt
+ * Ocean field. Static-per-config arrays (tau/groupTau/speed/amp/depthEff) are rebuilt
  * when bathymetry/swell/tide change; dynamic arrays update every step.
  */
 export interface OceanField {
   /** Wave travel-time from the offshore boundary, seconds (eikonal solve). */
   tau: Float32Array;
+  /** Travel-time field for the set envelope, accumulated at group speed. */
+  groupTau: Float32Array;
   /** Local shallow-water wave speed sqrt(g*depthEff), m/s. */
   speed: Float32Array;
   /** Local wave amplitude H0 * shoaling coefficient, metres. */

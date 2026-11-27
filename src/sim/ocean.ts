@@ -23,6 +23,35 @@ export function shoalingK(depthM: number): number {
 }
 
 /**
+ * Finite-depth linear dispersion solver: omega^2 = g * k * tanh(k * depthM),
+ * solved for wavenumber k (rad/m) via Newton iteration.
+ */
+export function dispersionK(omega: number, depthM: number): number {
+  const omega2 = omega * omega;
+  let k = omega2 / GRAVITY;
+  if (depthM <= 0.05) return k;
+  for (let i = 0; i < 10; i++) {
+    const tanhKD = Math.tanh(Math.min(k * depthM, 20));
+    const f = GRAVITY * k * tanhKD - omega2;
+    const fp = GRAVITY * tanhKD + GRAVITY * k * depthM * (1 - tanhKD * tanhKD);
+    k -= f / fp;
+    if (k < 1e-4) k = 1e-4;
+  }
+  return k;
+}
+
+/** Finite-depth linear wave group speed c_g = 0.5 * c * (1 + 2kd / sinh(2kd)). */
+export function groupSpeed(omega: number, depthM: number): number {
+  const k = dispersionK(omega, depthM);
+  const c = omega / k;
+  if (depthM <= 0.05) return 0.5 * c;
+  const kd = k * depthM;
+  const twoKD = 2 * kd;
+  if (twoKD > 30) return 0.5 * c;
+  return 0.5 * c * (1 + twoKD / Math.sinh(twoKD));
+}
+
+/**
  * Solve the eikonal equation |grad tau| = 1/c over the grid by relaxed
  * Gauss-Seidel sweeps (alternating direction), seeded on the boundary with
  * the incoming plane wave's delay tau_pw = (x sinθ + y cosθ) / c_deep.
@@ -36,14 +65,15 @@ function solveTravelTime(
   w: number,
   h: number,
   cellM: number,
-  thetaRad: number
+  thetaRad: number,
+  boundarySpeed?: number
 ): Float32Array {
   const tau = new Float32Array(w * h).fill(INF);
   const sinT = Math.sin(thetaRad);
   const cosT = Math.cos(thetaRad);
   let maxDepth = 0.1;
   for (let i = 0; i < depthEff.length; i++) if (depthEff[i] > maxDepth) maxDepth = depthEff[i];
-  const cDeep = waveSpeed(maxDepth);
+  const cDeep = boundarySpeed ?? waveSpeed(maxDepth);
   // Seed all four edges with the plane-wave delay.
   for (let x = 0; x < w; x++) {
     const xm = x * cellM;
@@ -100,17 +130,24 @@ export function buildOcean(bathy: Bathymetry, swell: SwellParams, tideM: number)
   const n = w * h;
   const depthEff = new Float32Array(n);
   const speed = new Float32Array(n);
+  const cg = new Float32Array(n);
   const amp = new Float32Array(n);
+  const omega = (2 * Math.PI) / swell.periodS;
+  let maxDepth = 0.1;
   for (let i = 0; i < n; i++) {
     const d = bathy.depth[i] + tideM;
     depthEff[i] = d;
+    if (d > maxDepth) maxDepth = d;
     speed[i] = waveSpeed(d);
+    cg[i] = d > 0.25 ? groupSpeed(omega, d) : speed[i];
     amp[i] = d > 0.3 ? swell.heightM * shoalingK(d) : 0;
   }
   const theta = (swell.directionDeg * Math.PI) / 180;
   const tau = solveTravelTime(depthEff, speed, w, h, CELL_M, theta);
+  const groupTau = solveTravelTime(depthEff, cg, w, h, CELL_M, theta, groupSpeed(omega, maxDepth));
   return {
     tau,
+    groupTau,
     speed,
     amp,
     depthEff,
@@ -124,7 +161,7 @@ export function buildOcean(bathy: Bathymetry, swell: SwellParams, tideM: number)
 /**
  * Advance the dynamic field by one step: phase, set envelope, breaking mask
  * and foam. Waves arrive in sets: amplitude is modulated by a slow envelope
- * travelling with the wave (function of t - tau), group period = 7 * T.
+ * travelling at group velocity (function of t - groupTau), group period = 7 * T.
  */
 export function updateOcean(field: OceanField, swell: SwellParams, time: number, w: number, h: number, dt: number): void {
   const omega = (2 * Math.PI) / swell.periodS;
@@ -136,7 +173,7 @@ export function updateOcean(field: OceanField, swell: SwellParams, time: number,
   // of an already-supercritical upwave neighbour are whitewater, not a face.
   const backX = Math.round(Math.sin(theta) * 3);
   const backY = Math.round(Math.cos(theta) * 3);
-  const { tau, amp, depthEff, cosPhase, ratio, breaking, foam } = field;
+  const { tau, groupTau, amp, depthEff, cosPhase, ratio, breaking, foam } = field;
   // Foam lives ~5 s and is advected shoreward at bore speed; sample the
   // previous step's field so whitewater forms travelling bands that wash
   // in and fade, instead of saturating the whole inside section.
@@ -157,7 +194,8 @@ export function updateOcean(field: OceanField, swell: SwellParams, time: number,
       const s = time - tau[i];
       const cp = Math.cos(omega * s);
       cosPhase[i] = cp;
-      const env = 0.6 + 0.4 * Math.cos(groupOmega * s);
+      const sg = time - groupTau[i];
+      const env = 0.6 + 0.4 * Math.cos(groupOmega * sg);
       const r = (amp[i] * env) / d;
       ratio[i] = r;
       const ux = x - backX;
