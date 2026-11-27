@@ -1,5 +1,13 @@
-import { CELL_M, SurferState } from '../contracts/types.ts';
+import { CELL_M, SurferState, WORLD_H_M, WORLD_W_M } from '../contracts/types.ts';
 import type { WorldState } from '../contracts/types.ts';
+import {
+  createCamera,
+  screenToWorld,
+  updateCamera,
+  viewRect,
+  worldToScreen,
+} from './camera.ts';
+import type { CameraMode, CameraState } from './camera.ts';
 
 /**
  * Top-down Canvas renderer (S04). The ocean is painted into a grid-sized
@@ -60,8 +68,14 @@ export class SurfRenderer {
   private readonly offCtx: CanvasRenderingContext2D;
   private readonly image: ImageData;
   private readonly col: Rgb = { r: 0, g: 0, b: 0 };
+  private readonly camera: CameraState;
 
-  constructor(canvas: HTMLCanvasElement, gridW: number, gridH: number) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    gridW: number,
+    gridH: number,
+    mode: CameraMode = 'follow'
+  ) {
     this.canvas = canvas;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('2d context unavailable');
@@ -73,9 +87,42 @@ export class SurfRenderer {
     if (!offCtx) throw new Error('2d context unavailable');
     this.offCtx = offCtx;
     this.image = offCtx.createImageData(gridW, gridH);
+    this.camera = createCamera(mode);
   }
 
-  render(world: WorldState): void {
+  get cameraMode(): CameraMode {
+    return this.camera.mode;
+  }
+
+  setCameraMode(mode: CameraMode): void {
+    this.camera.mode = mode;
+  }
+
+  toggleCameraMode(): CameraMode {
+    this.camera.mode = this.camera.mode === 'follow' ? 'full' : 'follow';
+    return this.camera.mode;
+  }
+
+  snapToPlayer(world: WorldState): void {
+    updateCamera(
+      this.camera,
+      world.surferX[0],
+      world.surferY[0],
+      0,
+      0,
+      0,
+      this.canvas.width / this.canvas.height
+    );
+  }
+
+  clientToWorld(clientX: number, clientY: number): { x: number; y: number } {
+    const rect = this.canvas.getBoundingClientRect();
+    const sx = ((clientX - rect.left) / rect.width) * this.canvas.width;
+    const sy = ((clientY - rect.top) / rect.height) * this.canvas.height;
+    return screenToWorld(this.camera, this.canvas.width, this.canvas.height, sx, sy);
+  }
+
+  render(world: WorldState, dtSeconds: number): void {
     const { gridW: w, gridH: h } = world.config;
     const o = world.ocean;
     const data = this.image.data;
@@ -114,19 +161,43 @@ export class SurfRenderer {
     this.offCtx.putImageData(this.image, 0, 0);
     const cw = this.canvas.width;
     const ch = this.canvas.height;
+    const aspect = cw / ch;
+    if (this.camera.mode === 'follow') {
+      let lx = world.surferVX[0] * 1.1;
+      let ly = world.surferVY[0] * 1.1;
+      const lookLen = Math.hypot(lx, ly);
+      if (lookLen > 30) {
+        const scale = 30 / lookLen;
+        lx *= scale;
+        ly *= scale;
+      }
+      updateCamera(this.camera, world.surferX[0], world.surferY[0], lx, ly, dtSeconds, aspect);
+    } else {
+      this.camera.cx = WORLD_W_M / 2;
+      this.camera.cy = WORLD_H_M / 2;
+    }
+    const rect = viewRect(this.camera, aspect);
     this.ctx.imageSmoothingEnabled = false;
-    this.ctx.drawImage(this.offscreen, 0, 0, cw, ch);
-    const sx = cw / (w * CELL_M);
-    const sy = ch / (h * CELL_M);
+    this.ctx.drawImage(
+      this.offscreen,
+      rect.x / CELL_M,
+      rect.y / CELL_M,
+      rect.w / CELL_M,
+      rect.h / CELL_M,
+      0,
+      0,
+      cw,
+      ch
+    );
+    const k = WORLD_H_M / rect.h;
     for (let i = 0; i < world.numSurfers; i++) {
-      this.drawSurfer(world, i, sx, sy);
+      const pos = worldToScreen(this.camera, cw, ch, world.surferX[i], world.surferY[i]);
+      this.drawSurfer(world, i, pos.x, pos.y, k);
     }
   }
 
-  private drawSurfer(world: WorldState, i: number, sx: number, sy: number): void {
+  private drawSurfer(world: WorldState, i: number, x: number, y: number, k: number): void {
     const ctx = this.ctx;
-    const x = world.surferX[i] * sx;
-    const y = world.surferY[i] * sy;
     const heading = world.surferHeading[i];
     const state = world.surferState[i] as SurferState;
     const isPlayer = i === 0;
@@ -137,24 +208,24 @@ export class SurfRenderer {
     // Board: elongated ellipse pointing along heading.
     ctx.fillStyle = state === SurferState.WIPEOUT ? '#9aa5b1' : boardColor;
     ctx.beginPath();
-    ctx.ellipse(0, 0, 7, 3.1, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, 7 * k, 3.1 * k, 0, 0, Math.PI * 2);
     ctx.fill();
     if (isPlayer) {
       ctx.strokeStyle = '#ff5964';
-      ctx.lineWidth = 1.6;
+      ctx.lineWidth = 1.6 * k;
       ctx.stroke();
     }
     // Body.
     ctx.fillStyle = isPlayer ? '#ff5964' : '#173042';
     ctx.beginPath();
-    ctx.arc(state === SurferState.RIDE ? 1.5 : -0.5, 0, 2.3, 0, Math.PI * 2);
+    ctx.arc((state === SurferState.RIDE ? 1.5 : -0.5) * k, 0, 2.3 * k, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
     if (isPlayer) {
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 9px system-ui, sans-serif';
+      ctx.font = `bold ${9 * k}px system-ui, sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillText('YOU', x, y - 10);
+      ctx.fillText('YOU', x, y - 10 * k);
     }
   }
 }

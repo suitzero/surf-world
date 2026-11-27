@@ -2,6 +2,7 @@ import './style.css';
 import { SurferState, WORLD_H_M, WORLD_W_M } from './contracts/types.ts';
 import type { BathymetryKind, SurferInput, WorldState } from './contracts/types.ts';
 import { RuleAgent } from './policies/ruleAgent.ts';
+import type { CameraMode } from './render/camera.ts';
 import { SurfRenderer } from './render/canvasRenderer.ts';
 import { createWorld, stepWorld } from './sim/world.ts';
 
@@ -20,8 +21,27 @@ let swellDirection = 8;
 let tide = 0;
 let aiCount = 3;
 
+const CAMERA_KEY = 'surf-world-camera-mode';
+
+function loadCameraMode(): CameraMode {
+  try {
+    return localStorage.getItem(CAMERA_KEY) === 'full' ? 'full' : 'follow';
+  } catch {
+    return 'follow';
+  }
+}
+
+function saveCameraMode(mode: CameraMode): void {
+  try {
+    localStorage.setItem(CAMERA_KEY, mode);
+  } catch {
+    // Ignore storage errors (e.g. private browsing).
+  }
+}
+
 let world!: WorldState; // assigned by buildWorld() before any use
 let agents: RuleAgent[] = [];
+let renderer: SurfRenderer | undefined;
 
 function buildWorld(): void {
   world = createWorld(
@@ -37,6 +57,7 @@ function buildWorld(): void {
   for (let i = 1; i < world.numSurfers; i++) {
     agents.push(new RuleAgent(i - 1, aiCount));
   }
+  renderer?.snapToPlayer(world);
   seedLabel.textContent = `seed ${seed}`;
   setStatus('Paddle out. WASD / arrows / drag.');
 }
@@ -51,13 +72,33 @@ const hudStaminaFill = getEl<HTMLElement>('hud-stamina-fill');
 const hudFps = getEl<HTMLElement>('hud-fps');
 const hudSimMs = getEl<HTMLElement>('hud-simms');
 const seedLabel = getEl<HTMLElement>('seed-label');
+const btnCamera = getEl<HTMLButtonElement>('btn-camera');
 
 function setStatus(msg: string): void {
   statusMsg.textContent = msg;
 }
 
+function syncCameraButton(): void {
+  if (!renderer) return;
+  btnCamera.textContent =
+    renderer.cameraMode === 'follow' ? '📷 CAMERA: FOLLOW' : '📷 CAMERA: FULL';
+}
+
+function toggleCamera(): void {
+  if (!renderer) return;
+  const mode = renderer.toggleCameraMode();
+  saveCameraMode(mode);
+  syncCameraButton();
+  if (mode === 'follow') {
+    renderer.snapToPlayer(world);
+  }
+}
+
 buildWorld();
-const renderer = new SurfRenderer(canvas, world.config.gridW, world.config.gridH);
+renderer = new SurfRenderer(canvas, world.config.gridW, world.config.gridH, loadCameraMode());
+renderer.snapToPlayer(world);
+syncCameraButton();
+btnCamera.addEventListener('click', toggleCamera);
 
 // --- Player input: keyboard + pointer drag ---
 const heldKeys = new Set<string>();
@@ -67,6 +108,7 @@ let pointerY = 0;
 let takeoffQueued = false;
 
 function canvasToWorld(clientX: number, clientY: number): { x: number; y: number } {
+  if (renderer) return renderer.clientToWorld(clientX, clientY);
   const rect = canvas.getBoundingClientRect();
   return {
     x: ((clientX - rect.left) / rect.width) * WORLD_W_M,
@@ -98,6 +140,10 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Space') {
     e.preventDefault();
     takeoffQueued = true;
+    return;
+  }
+  if (e.code === 'KeyC') {
+    toggleCamera();
     return;
   }
   if (
@@ -212,7 +258,7 @@ function frame(now: number): void {
     const ms = performance.now() - t0;
     simMsAvg = simMsAvg * 0.9 + ms * 0.1;
   }
-  renderer.render(world);
+  renderer?.render(world, elapsed);
   updateHud();
   fpsFrames++;
   fpsTime += elapsed;
