@@ -1,7 +1,8 @@
 import './style.css';
 import { initAudio, isMuted, playSfx, setMuted, startBgm } from './audio/audioEngine.ts';
 import { SurferState, WORLD_H_M, WORLD_W_M } from './contracts/types.ts';
-import type { BathymetryKind, SurferInput, WorldState } from './contracts/types.ts';
+import type { Bathymetry, BathymetryKind, SurferInput, WorldState } from './contracts/types.ts';
+import { initTerrainStudio } from './editor/terrainStudio.ts';
 import { initOceanLab } from './lab/oceanLab.ts';
 import { RuleAgent } from './policies/ruleAgent.ts';
 import type { CameraMode } from './render/camera.ts';
@@ -17,6 +18,7 @@ function getEl<T extends HTMLElement>(id: string): T {
 // --- Settings (mirrors the HUD controls) ---
 let seed = 7;
 let bathyKind: BathymetryKind = 'sandbar';
+let customBathy: Bathymetry | null = null;
 let swellHeight = 1.8;
 let swellPeriod = 9;
 let swellDirection = 8;
@@ -49,6 +51,7 @@ function buildWorld(): void {
   world = createWorld(
     {
       bathymetry: bathyKind,
+      bathymetryField: customBathy ?? undefined,
       swell: { heightM: swellHeight, periodS: swellPeriod, directionDeg: swellDirection },
       tideM: tide,
       aiCount,
@@ -202,6 +205,11 @@ function playerInput(): SurferInput {
 // --- Controls wiring ---
 const selBathy = getEl<HTMLSelectElement>('sel-bathy');
 selBathy.addEventListener('change', () => {
+  if (selBathy.value === 'custom') {
+    buildWorld();
+    return;
+  }
+  customBathy = null;
   bathyKind = selBathy.value as BathymetryKind;
   buildWorld();
 });
@@ -366,3 +374,19 @@ initOceanLab(() => ({
   swell: { heightM: swellHeight, periodS: swellPeriod, directionDeg: swellDirection },
   tideM: tide,
 }));
+
+initTerrainStudio({
+  onSurfIt: (bathy) => {
+    customBathy = bathy;
+    if (!selBathy.querySelector('option[value="custom"]')) {
+      const opt = document.createElement('option');
+      opt.value = 'custom';
+      opt.textContent = 'Custom (Terrain Studio)';
+      selBathy.appendChild(opt);
+    }
+    selBathy.value = 'custom';
+    buildWorld();
+    canvas.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setStatus('🏄 Surfing your custom terrain — built in the Terrain Studio.');
+  },
+});

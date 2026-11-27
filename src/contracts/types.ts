@@ -8,6 +8,7 @@ export const WORLD_W_M = GRID_W * CELL_M;
 export const WORLD_H_M = GRID_H * CELL_M;
 
 export type BathymetryKind = 'beach' | 'sandbar' | 'point' | 'reef';
+export type BathymetrySource = BathymetryKind | 'custom';
 
 export const BATHYMETRY_KINDS: readonly BathymetryKind[] = [
   'beach',
@@ -38,14 +39,14 @@ export interface WorldConfig {
   dt: number;
   /** Tide offset added to every depth, metres. */
   tideM: number;
-  bathymetry: BathymetryKind;
+  bathymetry: BathymetrySource;
   /** Number of AI surfers (player is extra). 0..8 */
   aiCount: number;
 }
 
 /** Seafloor: depth in metres per cell, positive = water, <= 0 = land. */
 export interface Bathymetry {
-  kind: BathymetryKind;
+  kind: BathymetrySource;
   seed: number;
   width: number;
   height: number;

@@ -8,6 +8,7 @@ import {
   WORLD_W_M,
 } from '../contracts/types.ts';
 import type {
+  Bathymetry,
   BathymetryKind,
   SurferInput,
   SwellParams,
@@ -79,6 +80,7 @@ export const TUNING = {
 
 export interface CreateWorldOptions {
   bathymetry?: BathymetryKind;
+  bathymetryField?: Bathymetry;
   swell?: SwellParams;
   tideM?: number;
   aiCount?: number;
@@ -86,6 +88,28 @@ export interface CreateWorldOptions {
 }
 
 export function createWorld(opts: CreateWorldOptions, seed: number): WorldState {
+  let bathy: Bathymetry;
+  if (opts.bathymetryField) {
+    const field = opts.bathymetryField;
+    if (
+      field.width !== GRID_W ||
+      field.height !== GRID_H ||
+      field.depth.length !== GRID_W * GRID_H
+    ) {
+      throw new Error(
+        `Invalid bathymetryField dimensions: expected ${GRID_W}x${GRID_H} (${GRID_W * GRID_H}), got ${field.width}x${field.height} (${field.depth.length})`
+      );
+    }
+    bathy = {
+      kind: 'custom',
+      seed: field.seed,
+      width: field.width,
+      height: field.height,
+      depth: new Float32Array(field.depth),
+    };
+  } else {
+    bathy = generateBathymetry(opts.bathymetry ?? 'sandbar', seed);
+  }
   const config: WorldConfig = {
     version: CONTRACT_VERSION,
     gridW: GRID_W,
@@ -93,11 +117,10 @@ export function createWorld(opts: CreateWorldOptions, seed: number): WorldState 
     cellM: CELL_M,
     dt: opts.dt ?? 0.05,
     tideM: opts.tideM ?? 0,
-    bathymetry: opts.bathymetry ?? 'sandbar',
+    bathymetry: opts.bathymetryField ? 'custom' : (opts.bathymetry ?? 'sandbar'),
     aiCount: Math.max(0, Math.min(8, opts.aiCount ?? 3)),
   };
   const swell: SwellParams = { ...(opts.swell ?? DEFAULT_SWELL) };
-  const bathy = generateBathymetry(config.bathymetry, seed);
   const ocean = buildOcean(bathy, swell, config.tideM);
   const numSurfers = 1 + config.aiCount;
   const world: WorldState = {

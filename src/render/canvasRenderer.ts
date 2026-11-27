@@ -19,7 +19,7 @@ import { ParticleKind, ParticleSystem } from './particles.ts';
  * blended toward white.
  */
 
-interface Rgb {
+export interface Rgb {
   r: number;
   g: number;
   b: number;
@@ -35,7 +35,7 @@ const DEPTH_STOPS: { d: number; c: Rgb }[] = [
   { d: 15, c: { r: 9, g: 40, b: 112 } }, // deep
 ];
 
-function depthColor(d: number, out: Rgb): void {
+export function depthColor(d: number, out: Rgb): void {
   const stops = DEPTH_STOPS;
   if (d <= stops[0].d) {
     out.r = stops[0].c.r;
